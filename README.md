@@ -10,7 +10,7 @@
 4. Enjoy!
 
 ## Development
-**netblock** is under development (helps to practice Ruby language). So bugs are expected.
+**netblock** is under development (to improve my Ruby skills). So bugs are expected.
 
 ## Usage
 #### Search using provider (or part of it) name
