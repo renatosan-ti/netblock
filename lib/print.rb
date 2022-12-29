@@ -29,10 +29,11 @@ class Print
     exit
   end
 
-  def self.output_info(asn, provider, netblock, totalIPs, *ipBlock)      
+  def self.output_info(asn, provider, location, netblock, totalIPs, *ipBlock)
     print "%16s %s %s\n".bold % ["ASN", "│".blue, "AS#{asn.to_s}".light_cyan]
     print "%16s %s %s\n".bold % ["Provider", "│".blue, provider.strip.light_cyan]
-    print "%16s %s %s\n".bold % ["IP block", "│".blue, ipBlock.join.gsub(/\.\./, '-').light_cyan] unless ipBlock.empty?
+    print "%16s %s %s\n".bold % ["Location", "│".blue, location.strip.light_cyan] 
+    print "%16s %s %s\n".bold % ["IP block", "│".blue, ipBlock.join.gsub(/\.\./, '-').light_cyan] if ipBlock
     print "%16s %s %s\n".bold % ["Netblock", "│".blue, netblock.join(" ").light_cyan]
     print "%16s %s %s\n".bold % ["Total IP(s)", "│".blue, Whois.format_number(totalIPs).light_cyan]
   end  

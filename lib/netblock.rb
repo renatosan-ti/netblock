@@ -2,7 +2,7 @@ require_relative 'whois'
 
 begin
   @whois = Whois.new
-  
+  raise "No internet connection" unless Whois.has_internet?
   unless ARGV.empty?
     ARGV.each do |arg|          
       case arg.to_s
