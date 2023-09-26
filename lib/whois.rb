@@ -1,11 +1,14 @@
 require 'ipaddr'
+require 'socket'
 #require 'json'
 #require_relative 'which'
 require_relative 'validate'
+require_relative 'asn'
 
 class Whois	
 	@whoisHost = "whois.pwhois.org"
-	@asn, @provider, @netblock = nil
+	@whoisPort = 43
+	@asn, @provider, @netblock, @output = nil
 	
 	# From https://stackoverflow.com/a/22837368/4603968
 	def self.has_internet?		
@@ -26,24 +29,31 @@ class Whois
 			Print.err e.message
 			exit!
 		end
+	end
 
-		#if Whois.has_internet? == false
-		#	Print.err "No internet connection"
-		#	exit!
-		#else
-		#	Print.install_whois unless which('whois')
-		#end
+	def self.pwhois(msg)	
+		begin
+		s = TCPSocket.new(@whoisHost, @whoisPort)
+
+		s.write msg + "\n"		
+		res = s.read		
+		s.close
+		rescue StandardError => e
+			Print.err e.message
+		else
+			return res
+		end
 	end
 
 	def self.command(*args)
 		begin
 			arg = args.join						
-			output = %x{whois -h #{@whoisHost} #{arg}}			
+			@output = pwhois(arg)			
 		rescue RuntimeError => e
 			Print.err e.message
 			exit!
 		else
-			return output
+			return @output
 		end	
 	end
 	
@@ -55,98 +65,42 @@ class Whois
 		[whole_with_commas, decimal].compact.join(".")
 	end
 
-	def format_asn(asn)
-		if asn.to_s.start_with?("AS")
-			return asn[2..-1]
-		else
-			return asn
-		end
-	end
-
-	def check_asn_routes(asn)
-		asn = format_asn(asn)
+	def ip_to_asn(ipaddr)		
+		# Input: IP address
+		# Output: ASN
 		begin						
-      output = Whois.command("type=jsonp routeview source-as=#{asn}")
-      raise 'No prefixes found in routeview' unless JSON.parse(output).key?("routes")
-    rescue StandardError => e
-      Print.err e.message
-    	exit!		
-		else
-			return true
-    end	
-	end
-	
-	def get_provider_name(asn)
-		validate = Validate.new
-		asn = format_asn(asn)
-    
-    if validate.asn(asn)			
-    	output = JSON.parse(Whois.command("type=jsonp registry source-as=#{asn}")).fetch('records')
-			output.select do |line| 
-				@provider = line['Org-Name']
-				#@location = line['City']
-			end
-    	return @provider #, @location
-		end
-	end
-
-	def get_netblock(asn, *args)
-		validate = Validate.new
-		asn = format_asn(asn)
-
-    netblock = []
-		@ipBlock = []
-    @totalIPs = 0		
-		
-    if validate.asn(asn)    	
-			JSON.parse(Whois.command("type=jsonp netblock source-as=#{asn}"), {symbolize_names: true})[:ASes].each do |ases|
-				ases[:Nets].each_entry do |ip|
-					fromIP = ip[:"Net-Range"].split("-").first.strip
-					toIP = ip[:"Net-Range"].split("-").last.strip
-					ip_range = IPAddr.new(fromIP)..IPAddr.new(toIP)
-					@ipBlock << ip_range if ip_range.include?(@ipv4)
-
-					netblock << "#{fromIP}-#{toIP}"
-					@totalIPs += ip_range.count					
-				end
-			end
-			return netblock			
-		end
-	end
-
-	def get_ipaddr_info(ipaddr)		
-		begin						
-			output = JSON.parse(Whois.command("type=jsonp #{ipaddr}"))
-			@asn = output['Origin-AS']
-			@provider = output['AS-Org-Name']
-			
-			return @asn, @provider
+			@output = JSON.parse(Whois.command("type=jsonp #{ipaddr}"))
+			@asn = @output['Origin-AS']
+			return @asn
 		end
 	end	
-
-	def search_by_asn(asn)		
+	
+	def search_by_asn(asnCode)		
 		validate = Validate.new
-		asn = format_asn(asn)
-
-		@asn = validate.asn(asn)
-		check_asn_routes(@asn)
-		@provider = get_provider_name(@asn)
-		netblock = get_netblock(@asn)
+		result = Asn.new
+		asn = Asn.format_asn(asnCode) # Essa linha retorna uma string
+		p asn
+		p result
+		if Asn.check_asn_routes(asn)
+			output = Asn.asn_to_provider_and_location(asn)
+			@provider = output.first
+			netblock = result.get_netblock(asn)
 		
-		Print.output_info(@asn, @provider, netblock, @totalIPs)
+			Print.output_info(@asn, @provider, @location, netblock, @totalIPs, @ipBlock)
+		end
 	end
 
 	def search_by_provider_name(provider)
 		validate = Validate.new		
-		@provider = validate.provider(provider)
+		output = get_provider_list(provider) #validate.provider(provider)
 
-		provider = @provider.first
-		asn = @provider.last
-		#city = @provider[2]
+		asn = []
 
-		if asn.count.eql?(1)						
+		output.each { |line| asn << asn_to_provider_and_location(line) }
+
+		if output.count.eql?(1)						
 			netblock = get_netblock(asn.first)
-			Print.output_info(asn.first, provider.first, netblock, @totalIPs)			
+			Print.output_info(asn.first, provider.first, location.first, netblock, @totalIPs)			
 		else			
 			Print.providers_found(provider, asn)
 		end		
@@ -154,13 +108,14 @@ class Whois
 	
 	def search_by_ipv4(ipaddr)		
 		validate = Validate.new
-		@ipv4 = validate.ipv4(ipaddr)
-		asn = get_ipaddr_info(@ipv4)
+		result = Asn.new
+		@asn = ip_to_asn(ipaddr)
+		@provider = @output['AS-Org-Name']
+		@location = @output['City'] + "-" + @output['Region'] + " (" + @output['Country'] + ")"
+		netblock = result.get_netblock(@asn, ipaddr)
 		
-		@asn = asn.first
-		@provider = asn.last
-		netblock = get_netblock(@asn)
-		Print.output_info(@asn, @provider, netblock, @totalIPs, @ipBlock)
+		p @output
+		Print.output_info(@asn, @provider, @location, netblock, result.totalIPs, result.ipBlock)		                   
 	end	
 
 	def search_by_ipv6(ipaddr)		
