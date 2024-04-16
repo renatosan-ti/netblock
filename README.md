@@ -6,9 +6,10 @@
 ## Install
 1. `git clone https://github.com/p0ngbr/netblock.git`
 2. `cd netblock`
-3. `chmod +x netblock`
-4. `./netblock`
-5. Enjoy!
+3. `bundler install`
+4. `chmod +x netblock`
+5. `./netblock`
+6. Enjoy!
 
 ## Development
 **netblock** is under development (to improve my Ruby skills). So bugs are expected.
